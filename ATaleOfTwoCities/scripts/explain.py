@@ -1,46 +1,59 @@
-import spacy
+import re
+import sys
 
-nlp = spacy.load("en_core_web_sm")
+# Usage:
+#   python annotate.py <text_file> <vocab_file> <output_file>
+# Example:
+#   python annotate.py original_text.txt vocab_list.txt output.txt
 
+if len(sys.argv) != 4:
+    print("Usage: python annotate.py <text_file> <vocab_file> <output_file>")
+    sys.exit(1)
 
-def loadNewWordList():
-    newWords = []
-    with open("../../vocabulary/c1.txt", "r", encoding="utf-8") as f:
-        c1Lines = f.readlines()
-        c1Lines = list(filter(lambda x: not x.startswith("# "), c1Lines))
-        c1Lines = [line.strip() for line in c1Lines]
-    newWords.extend(c1Lines)
-
-    with open("../../vocabulary/c2.txt", "r", encoding="utf-8") as f:
-        c2Lines = f.readlines()
-        c2Lines = list(filter(lambda x: not x.startswith("# "), c2Lines))
-        c2Lines = [line.strip() for line in c2Lines]
-    newWords.extend(c2Lines)
-
-    return newWords
-
-newWords = loadNewWordList()
-print(newWords)
+TEXT_FILE = sys.argv[1]
+VOCAB_FILE = sys.argv[2]
+OUTPUT_FILE = sys.argv[3]
 
 
-def explain(inText):
-    words = inText.split()
-    for word in words:
-        if len(word) > 2:
-            doc = nlp(word)
-            lemma = doc[0].lemma_
-            if lemma in newWords:
-                print(word + " -> " + lemma)
-    return inText
+# ---------- load vocabulary ----------
+vocab = {}
 
-for chapter_index in range(2, 3):
-    outLines = []
-    with open(f"../raw/chapter_{chapter_index:02d}.txt", "r", encoding="utf-8") as inF:
-        inLines = inF.readlines()
-        
-        for inLine in inLines:
-            outLine = explain(inLine)
-            outLines.append(outLine)
+with open(VOCAB_FILE, "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        # Expected format:
+        # original word: base form: phonics: meaning
+        parts = [p.strip() for p in line.split(":", 3)]
+        if len(parts) != 4:
+            continue
+        original, base, phonics, meaning = parts
+        vocab[original] = f" _({base} {phonics}: {meaning})_"
 
-    with open(f"../chapter_{chapter_index:02d}.txt", "w", encoding="utf-8") as outF:
-        outF.writelines(outLines)
+
+# ---------- process text ----------
+def replace_marked_words(line):
+    def repl(match):
+        word = match.group(1)
+        explanation = vocab.get(word)
+        if explanation:
+            return f"{word}{explanation}"
+        else:
+            # If vocab entry is missing, just remove ** **
+            return word
+
+    return re.sub(r"\*\*(.*?)\*\*", repl, line)
+
+
+# ---------- read / write ----------
+with open(TEXT_FILE, "r", encoding="utf-8") as fin, \
+     open(OUTPUT_FILE, "w", encoding="utf-8") as fout:
+    for line in fin:
+        fout.write(replace_marked_words(line))
+
+
+print("Done.")
+print("Input text :", TEXT_FILE)
+print("Vocab file :", VOCAB_FILE)
+print("Output     :", OUTPUT_FILE)
